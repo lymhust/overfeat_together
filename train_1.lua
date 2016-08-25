@@ -11,9 +11,9 @@ local c = require 'trepl.colorize'
 local opt = lapp[[
    -s,--save					(default "logs")                       subdirectory to save logs
    -b,--batchSize				(default 1)                            batch size
-   -r,--learningRate            (default 1e-2)                         learning rate
+   -r,--learningRate            (default 1e-3)                         learning rate
    --learningRateDecay          (default 0)                            learning rate decay
-   --weightDecay                (default 0)                            weightDecay
+   --weightDecay                (default 5e-4)                            weightDecay
    -m,--momentum                (default 0.9)                          momentum
    --epoch_step                 (default 5)                           epoch step
    --max_epoch                  (default 30)                          maximum number of iterations
@@ -47,12 +47,12 @@ end
 
 
 -- Setting parameters
-local imH, imW = 128, 128
+local imH, imW = 480, 640
 local outH, outW = imH/4, imW/4
 local clsnum = 43
 
 -- Load data
-local data = torch.load('./dataset/gtsdb_patch_classmap.t7')
+local data = torch.load('./dataset/gtsdb_large_class.t7')
 IMG = data[1]
 MASK = data[2]
 print(#IMG)
@@ -67,8 +67,8 @@ testLogger.showPlot = false
 
 -- Load model
 print(c.red('==> load model'))
-model = dofile('generate_model_1.lua'):cuda()
---model = torch.load('./trained_models/model_10.t7'):cuda()
+--model = dofile('generate_model_1.lua'):cuda()
+model = torch.load('./trained_models/model_class_large_iter_30.t7'):cuda()
 print(model)
 parameters, gradParameters = model:getParameters()
 
@@ -150,7 +150,8 @@ function train()
       
       -- Visualize
       ---[[
-      local dd1 = image.toDisplayTensor{input=output_exp[{ 1,{},{},{} }]:squeeze(),
+      local _, outmask = output_exp[1]:max(1)
+      local dd1 = image.toDisplayTensor{input=outmask,
                                         padding = 2,
                                         nrow = math.floor(math.sqrt(64)),
                                         symmetric = true}
@@ -191,7 +192,7 @@ for i = 1,  opt.max_epoch do
   
   if (math.fmod(i, opt.epoch_step) == 0) then
     -- Save model
-    torch.save('./trained_models/model_class_iter_'..i..'.t7', model)
+    torch.save('./trained_models/model_class_large_iter_'..i..'.t7', model)
   end
   
 end
