@@ -47,14 +47,15 @@ end
 
 
 -- Setting parameters
-local imH, imW = 128, 128
+local imH, imW = 480, 640
 local outH, outW = imH/4, imW/4
-local clsnum = 43
+local clsnum = 5
 
 -- Load data
-local data = torch.load('./dataset/gtsdb_patch_classmap.t7')
+local data = torch.load('./dataset/gtsdb_large.t7')
 IMG = data[1]
 MASK = data[2]
+MASK = MASK:cat(data[3], 2)
 print(#IMG)
 print(#MASK)
 
@@ -67,14 +68,19 @@ testLogger.showPlot = false
 
 -- Load model
 print(c.red('==> load model'))
-model = dofile('generate_model_1.lua'):cuda()
---model = torch.load('./trained_models/model_10.t7'):cuda()
+model = torch.load('./trained_models/model_class_iter_30.t7')
+--for i = 1, 1 do
+--  model.modules[#model.modules] = nil -- remove several layers
+--end
+--model:add(cudnn.SpatialConvolution(4096, 64*clsnum, 1, 1, 1, 1, 0, 0, 1))
+--model:add(cudnn.Sigmoid())
+model = model:cuda()
 print(model)
 parameters, gradParameters = model:getParameters()
 
 -- Set criterion
 print(c.red('==> setting criterion'))
-criterion = cudnn.SpatialCrossEntropyCriterion():cuda() 
+criterion = nn.MSECriterion():cuda() --cudnn.SpatialCrossEntropyCriterion():cuda() 
 
 -- Set optimizer
 print(c.red('==> configuring optimizer'))
@@ -88,7 +94,7 @@ optimState = {
 input = torch.CudaTensor(opt.batchSize, 3, imH, imW):zero()
 df_squeeze = torch.CudaTensor(opt.batchSize, 64*clsnum, outH/8, outW/8):zero()
 output_exp = torch.CudaTensor(opt.batchSize, clsnum, outH, outW):zero()
-target_exp = torch.CudaTensor(opt.batchSize, outH, outW):zero()
+target_exp = torch.CudaTensor(opt.batchSize, clsnum, outH, outW):zero()
 
 function train()
     
@@ -191,7 +197,7 @@ for i = 1,  opt.max_epoch do
   
   if (math.fmod(i, opt.epoch_step) == 0) then
     -- Save model
-    torch.save('./trained_models/model_class_iter_'..i..'.t7', model)
+    torch.save('./trained_models/model_bbox_iter_'..i..'.t7', model)
   end
   
 end

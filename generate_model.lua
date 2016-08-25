@@ -11,13 +11,13 @@ model_name = './caffe_model/model.caffemodel'
 print '==> Loading network'
 local model = loadcaffe.load(proto_name, model_name, 'cudnn')
 
-for i = 1, 10 do
+for i = 1, 7 do
   model.modules[#model.modules] = nil -- remove several layers
 end
-local feaLen1, feaLen2 = 1024, 1024
-model:add(cudnn.SpatialConvolution(384, feaLen1, 6, 6, 1, 1, 3, 3, 1))
-model:add(cudnn.ReLU(true))
-model:add(nn.Dropout(0.500000))
+local feaLen1, feaLen2 = 4096, 4096
+--model:add(cudnn.SpatialConvolution(384, feaLen1, 6, 6, 1, 1, 3, 3, 1))
+--model:add(cudnn.ReLU(true))
+--model:add(nn.Dropout(0.500000))
 
 -- Branches
 -- Mask
@@ -36,7 +36,7 @@ branch2:add(cudnn.SpatialConvolution(feaLen2, 256, 1, 1, 1, 1, 0, 0, 1))
 branch2:add(cudnn.Sigmoid())
 
 -- initialization from MSR
----[[
+--[[
 local function MSRinit(net)
   local function init(name)
     for k,v in pairs(net:findModules(name)) do

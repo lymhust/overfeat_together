@@ -6,6 +6,7 @@ require 'cunn'
 require 'gnuplot'
 require 'image'
 gnuplot.setterm('qt')
+torch.setdefaulttensortype('torch.FloatTensor') 
 local c = require 'trepl.colorize'
 
 local opt = lapp[[
@@ -13,10 +14,10 @@ local opt = lapp[[
    -b,--batchSize				(default 1)                            batch size
    -r,--learningRate            (default 1e-2)                         learning rate
    --learningRateDecay          (default 0)                            learning rate decay
-   --weightDecay                (default 0)                            weightDecay
+   --weightDecay                (default 5e-4)                            weightDecay
    -m,--momentum                (default 0.9)                          momentum
-   --epoch_step                 (default 30)                           epoch step
-   --max_epoch                  (default 100)                          maximum number of iterations
+   --epoch_step                 (default 1)                           epoch step
+   --max_epoch                  (default 2)                          maximum number of iterations
    --type                       (default cuda)                         cuda or double
 ]]
 print(opt)
@@ -47,11 +48,11 @@ end
 
 
 -- Setting parameters
-local imH, imW = 480, 640
+local imH, imW = 128, 128
 local outH, outW = imH/4, imW/4
 
 -- Load data
-local data = torch.load('./dataset/gtsdb.t7')
+local data = torch.load('./dataset/gtsdb_patch.t7')
 IMG = data[1]
 MASK = data[2]
 BBOX = data[3]
@@ -71,10 +72,14 @@ testLogger.showPlot = false
 
 -- Load model
 print(c.red('==> load model'))
-share, branch1, branch2 = dofile('generate_model.lua')
-share = share:cuda()
-branch1 = branch1:cuda() -- Mask
-branch2 = branch2:cuda() -- BBOX
+--share, branch1, branch2 = dofile('generate_model.lua')
+mod = torch.load('./trained_models/model_two_branch_iter_12.t7')
+--share = torch.load('./trained_models/share_1.t7'):cuda()
+--branch1 = torch.load('./trained_models/branch1_1.t7'):cuda()
+--branch2 = torch.load('./trained_models/branch2_1.t7'):cuda()
+share = mod[1]:cuda()
+branch1 = mod[2]:cuda() -- Mask
+branch2 = mod[3]:cuda() -- BBOX
 -- Concat
 local mlp = nn.ConcatTable()
 mlp:add(branch1)
@@ -85,7 +90,7 @@ model:add(share)
 model:add(mlp)
 model = model:cuda()
 print(model)
---model = torch.load('./trained_models/model.t7'):cuda()
+
 parameters, gradParameters = model:getParameters()
 
 -- Set criterion
@@ -102,6 +107,14 @@ optimState = {
   learningRateDecay = opt.learningRateDecay,
 }
 
+inputs = torch.CudaTensor(opt.batchSize, 3, imH, imW):zero()
+target_b1 = torch.CudaTensor(opt.batchSize, outH, outW):zero()    -- Mask
+target_b2 = torch.CudaTensor(opt.batchSize, 4, outH, outW):zero() -- BBox
+output_b1 = torch.CudaTensor(opt.batchSize, 2, outH, outW):zero()
+output_b2 = torch.CudaTensor(opt.batchSize, 4, outH, outW):zero()
+df_c1_reshape = torch.CudaTensor(opt.batchSize, 2*64, outH/8, outW/8):zero()
+df_c2_reshape = torch.CudaTensor(opt.batchSize, 4*64, outH/8, outW/8):zero()
+
 function train()
     
   -- Training mod
@@ -110,17 +123,10 @@ function train()
   branch2:training()
 
   local cost = {}
-  local inputs = torch.Tensor(opt.batchSize, 3, imH, imW):zero()
-  local target_b1 = torch.Tensor(opt.batchSize, outH, outW):zero()    -- Mask
-  local target_b2 = torch.Tensor(opt.batchSize, 4, outH, outW):zero() -- BBox
-  local output_b1 = torch.CudaTensor(opt.batchSize, 2, outH, outW):zero()
-  local output_b2 = torch.CudaTensor(opt.batchSize, 4, outH, outW):zero()
-  local df_c1_reshape = torch.CudaTensor(opt.batchSize, 2*64, outH/8, outW/8):zero()
-  local df_c2_reshape = torch.CudaTensor(opt.batchSize, 4*64, outH/8, outW/8):zero()
   
   
-  if opt.type == 'double' then inputs = inputs:double()
-  elseif opt.type == 'cuda' then inputs = inputs:cuda() target_b1 = target_b1:cuda() target_b2 = target_b2:cuda() end
+  --if opt.type == 'double' then inputs = inputs:double()
+  --elseif opt.type == 'cuda' then inputs = inputs:cuda() target_b1 = target_b1:cuda() target_b2 = target_b2:cuda() end
 
   --epoch = epoch or 1
   -- drop learning rate every "epoch_step" epochs
@@ -135,10 +141,13 @@ function train()
 
     -- Create mini batch
     local indx = 1
+    inputs:zero()
     target_b1:zero()
     target_b2:zero()
     output_b1:zero()
     output_b2:zero()
+    df_c1_reshape:zero()
+    df_c2_reshape:zero()
     for i = t, math.min(t+opt.batchSize-1, trainnum) do
       -- Load new sample
       inputs[indx] = IMG[shuffle[i]]
@@ -184,7 +193,7 @@ function train()
       
       -- Visualize
       ---[[
-      local dd1 = image.toDisplayTensor{input=output_b1[{ 1,{},{},{} }]:squeeze(),
+      local dd1 = image.toDisplayTensor{input=output_b1[{ 1,{2},{},{} }]:squeeze():gt(0),
                                         padding = 2,
                                         nrow = math.floor(math.sqrt(64)),
                                         symmetric = true}
@@ -225,9 +234,7 @@ for i = 1,  opt.max_epoch do
   
   if (math.fmod(i, opt.epoch_step) == 0) then
     -- Save model
-    torch.save('./trained_models/share_'..i..'.t7', share)
-    torch.save('./trained_models/branch1_'..i..'.t7', branch1)
-    torch.save('./trained_models/branch2_'..i..'.t7', branch2)
+    torch.save('./trained_models/model_'..i..'.t7', {share,branch1,branch2})
   end
   
 end
