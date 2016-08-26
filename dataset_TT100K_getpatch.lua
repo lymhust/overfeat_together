@@ -4,6 +4,7 @@ require 'gnuplot'
 require 'nn'
 json = require 'json'
 draw = require 'draw'
+tablex = require 'pl.tablex'
 local c = require 'trepl.colorize'
 --torch.setdefaulttensortype('torch.FloatTensor')
 
@@ -20,9 +21,11 @@ function loaddata(ids, folder, content)
     -- Ground truth file
     local file = io.open(addr..'gtruth.txt', 'w')
     local file_table = {}
+    local labelnum = {}
 
     -- Load img and gtruth
     local imgInfo = content.imgs
+    local labelInfo = content.types
     local totalnum = #ids
   
     for i = 1, totalnum do
@@ -32,7 +35,7 @@ function loaddata(ids, folder, content)
         
         -- Load image
         local imPath = imgInfo[ids[i]].path
-        local img = image.load(imPath)
+        --local img = image.load(imPath)
         local obj = imgInfo[ids[i]].objects
         
         for j = 1, #obj do
@@ -47,14 +50,17 @@ function loaddata(ids, folder, content)
             
             -- label
             local cls = obj[j].category
+            local labnum = tablex.find(labelInfo, cls)
             
-            local patch = img[{ {},{top,bottom},{left,right} }]:clone()
+            --local patch = img[{ {},{top,bottom},{left,right} }]:clone()
             
             -- Save
             local imgname = patchid..'.jpg'
-            image.save(addr..imgname, patch)
-            file:write(imgname..' '..cls..'\n')
-            file_table[patchid] = {imgname, cls}
+            --image.save(addr..imgname, patch)
+            file:write(imgname..' '..cls..' ')
+            file:write(labnum..'\n')
+            file_table[patchid] = {imgname, cls, labnum}
+            labelnum[patchid] = labnum
             
             patchid = patchid + 1  
             print(patchid)
@@ -63,7 +69,8 @@ function loaddata(ids, folder, content)
     end--totalnum
     
     file:close()
-    torch.save(addr..'gtruth.t7')
+    torch.save(addr..'gtruth.t7', file_table)
+    torch.save(addr..'labelnum.t7', labelnum)
 
 end
 -------------------------------------------------------------------------------------
